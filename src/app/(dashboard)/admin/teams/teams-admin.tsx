@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -46,23 +52,32 @@ export function TeamsAdmin({ teams, isSuperAdmin }: TeamsAdminProps) {
 
   async function handleCreateTeam(e: React.FormEvent) {
     e.preventDefault();
+    if (teamName.trim().length < 3) {
+      toast.error("Team name must be at least 3 characters");
+      return;
+    }
     setLoading(true);
 
     try {
       const res = await fetch("/api/teams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: teamName }),
+        body: JSON.stringify({ name: teamName.trim() }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        toast.error(data.error || "Failed to create team");
+        let msg = "Failed to create team";
+        try {
+          const data = await res.json();
+          msg = data.error || msg;
+        } catch {
+          // response wasn't JSON
+        }
+        toast.error(msg);
         return;
       }
 
-      toast.success(`Team "${teamName}" created`);
+      toast.success(`Team "${teamName.trim()}" created`);
       setCreateOpen(false);
       setTeamName("");
       router.refresh();
@@ -92,11 +107,12 @@ export function TeamsAdmin({ teams, isSuperAdmin }: TeamsAdminProps) {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Teams</h1>
-          <p className="text-muted-foreground">
-            Manage your organization&apos;s teams
+          <h1 className="text-2xl font-bold tracking-tight">Teams</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage your organization&apos;s teams and squads.
           </p>
         </div>
         {isSuperAdmin && (
@@ -107,12 +123,12 @@ export function TeamsAdmin({ teams, isSuperAdmin }: TeamsAdminProps) {
                 New team
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="sm:max-w-md">
               <form onSubmit={handleCreateTeam}>
                 <DialogHeader>
                   <DialogTitle>Create a new team</DialogTitle>
                   <DialogDescription>
-                    Teams track bars and breakfasts independently.
+                    Each team tracks its bars and breakfasts independently.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="py-4 space-y-2">
@@ -122,7 +138,6 @@ export function TeamsAdmin({ teams, isSuperAdmin }: TeamsAdminProps) {
                     placeholder="e.g. Backend, Frontend, DevOps..."
                     value={teamName}
                     onChange={(e) => setTeamName(e.target.value)}
-                    minLength={3}
                     maxLength={50}
                     required
                     autoFocus
@@ -131,15 +146,21 @@ export function TeamsAdmin({ teams, isSuperAdmin }: TeamsAdminProps) {
                     Between 3 and 50 characters.
                   </p>
                 </div>
-                <DialogFooter>
+                <DialogFooter className="gap-2 sm:gap-0">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setCreateOpen(false)}
+                    onClick={() => {
+                      setCreateOpen(false);
+                      setTeamName("");
+                    }}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={loading || teamName.length < 3}>
+                  <Button
+                    type="submit"
+                    disabled={loading || teamName.trim().length < 3}
+                  >
                     {loading ? "Creating..." : "Create team"}
                   </Button>
                 </DialogFooter>
@@ -149,33 +170,55 @@ export function TeamsAdmin({ teams, isSuperAdmin }: TeamsAdminProps) {
         )}
       </div>
 
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Total teams</CardDescription>
+            <CardTitle className="text-3xl">{teams.length}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Active</CardDescription>
+            <CardTitle className="text-3xl">{activeTeams.length}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Archived</CardDescription>
+            <CardTitle className="text-3xl">{archivedTeams.length}</CardTitle>
+          </CardHeader>
+        </Card>
+      </div>
+
       {/* Active teams */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Users className="h-5 w-5" />
             Active teams
-            <Badge variant="secondary" className="ml-1">
-              {activeTeams.length}
-            </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
           {activeTeams.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
-              <p>No active teams yet.</p>
-              {isSuperAdmin && (
-                <p className="text-sm mt-1">
-                  Create your first team to get started.
-                </p>
-              )}
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="rounded-full bg-muted p-4 mb-4">
+                <Users className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <p className="font-medium">No active teams</p>
+              <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+                {isSuperAdmin
+                  ? "Create your first team to start tracking bars and breakfasts."
+                  : "No teams have been created yet. Ask a super admin to create one."}
+              </p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
                   {isSuperAdmin && (
                     <TableHead className="text-right">Actions</TableHead>
@@ -186,6 +229,14 @@ export function TeamsAdmin({ teams, isSuperAdmin }: TeamsAdminProps) {
                 {activeTeams.map((team) => (
                   <TableRow key={team.id}>
                     <TableCell className="font-medium">{team.name}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="default"
+                        className="bg-green-100 text-green-800 hover:bg-green-100"
+                      >
+                        Active
+                      </Badge>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {format(new Date(team.created_at), "MMM d, yyyy")}
                     </TableCell>
@@ -194,6 +245,7 @@ export function TeamsAdmin({ teams, isSuperAdmin }: TeamsAdminProps) {
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="text-muted-foreground hover:text-destructive"
                           disabled={archivingId === team.id}
                           onClick={() => handleArchive(team)}
                         >
@@ -212,14 +264,11 @@ export function TeamsAdmin({ teams, isSuperAdmin }: TeamsAdminProps) {
 
       {/* Archived teams */}
       {archivedTeams.length > 0 && (
-        <Card>
+        <Card className="border-dashed">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
+            <CardTitle className="flex items-center gap-2 text-lg text-muted-foreground">
               <Archive className="h-5 w-5" />
               Archived teams
-              <Badge variant="secondary" className="ml-1">
-                {archivedTeams.length}
-              </Badge>
             </CardTitle>
             <CardDescription>
               Archived teams are read-only and hidden from regular users.
@@ -230,14 +279,18 @@ export function TeamsAdmin({ teams, isSuperAdmin }: TeamsAdminProps) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {archivedTeams.map((team) => (
-                  <TableRow key={team.id} className="text-muted-foreground">
+                  <TableRow key={team.id} className="opacity-60">
                     <TableCell>{team.name}</TableCell>
                     <TableCell>
+                      <Badge variant="secondary">Archived</Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
                       {format(new Date(team.created_at), "MMM d, yyyy")}
                     </TableCell>
                   </TableRow>
