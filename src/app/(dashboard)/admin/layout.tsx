@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import {SidebarWrapper} from "@/app/(dashboard)/sidebar-wrapper";
 
 export default async function AdminLayout({
   children,
@@ -15,7 +14,7 @@ export default async function AdminLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("*")
+    .select("global_role")
     .eq("id", user.id)
     .single();
 
@@ -26,8 +25,5 @@ export default async function AdminLayout({
     redirect("/dashboard");
   }
 
-  return <>
-    <SidebarWrapper profile={profile} />
-    {children}
-  </>;
+  return <>{children}</>;
 }

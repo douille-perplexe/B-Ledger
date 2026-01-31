@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { TenantSettings } from "./tenant-settings";
 
 export default async function TenantPage() {
@@ -15,13 +15,17 @@ export default async function TenantPage() {
     .eq("id", user.id)
     .single();
 
-  if (profile?.global_role !== "super_admin") redirect("/dashboard");
+  if (!profile?.tenant_id) redirect("/onboarding");
+  if (profile.global_role !== "super_admin") redirect("/dashboard");
 
-  const { data: tenant } = await supabase
+  const service = await createServiceClient();
+  const { data: tenant } = await service
     .from("tenants")
     .select("*")
-    .eq("id", profile.tenant_id!)
+    .eq("id", profile.tenant_id)
     .single();
 
-  return <TenantSettings tenant={tenant!} />;
+  if (!tenant) redirect("/dashboard");
+
+  return <TenantSettings tenant={tenant} />;
 }

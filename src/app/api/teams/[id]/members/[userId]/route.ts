@@ -5,93 +5,113 @@ import {
   jsonSuccess,
   createAuditLog,
 } from "@/lib/api/helpers";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { updateTeamMemberSchema } from "@/lib/validations/team";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string; userId: string }> }
 ) {
-  const { id: teamId, userId } = await params;
-  const ctx = await getAuthContext();
-  if (!ctx) return jsonError("Unauthorized", 401);
+  try {
+    const { id: teamId, userId } = await params;
+    const ctx = await getAuthContext();
+    if (!ctx) return jsonError("Unauthorized", 401);
 
-  const teamRole = await getTeamRole(ctx.user_id, teamId);
-  const canEdit = ctx.global_role === "super_admin" || teamRole === "admin";
-  if (!canEdit) return jsonError("Forbidden", 403);
+    const teamRole = await getTeamRole(ctx.user_id, teamId);
+    const canEdit = ctx.global_role === "super_admin" || teamRole === "admin";
+    if (!canEdit) return jsonError("Forbidden", 403);
 
-  const body = await request.json();
-  const parsed = updateTeamMemberSchema.safeParse(body);
-  if (!parsed.success) return jsonError("Invalid input", 400);
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonError("Invalid JSON body", 400);
+    }
 
-  const supabase = await createClient();
+    const parsed = updateTeamMemberSchema.safeParse(body);
+    if (!parsed.success) return jsonError("Invalid input", 400);
 
-  // Get old values for audit
-  const { data: oldMember } = await supabase
-    .from("team_members")
-    .select("role, is_active")
-    .eq("team_id", teamId)
-    .eq("user_id", userId)
-    .single();
+    const supabase = await createServiceClient();
 
-  const { data, error } = await supabase
-    .from("team_members")
-    .update(parsed.data)
-    .eq("team_id", teamId)
-    .eq("user_id", userId)
-    .select()
-    .single();
+    const { data: oldMember } = await supabase
+      .from("team_members")
+      .select("role, is_active")
+      .eq("team_id", teamId)
+      .eq("user_id", userId)
+      .single();
 
-  if (error) return jsonError("Failed to update member", 500);
+    const { data, error } = await supabase
+      .from("team_members")
+      .update(parsed.data)
+      .eq("team_id", teamId)
+      .eq("user_id", userId)
+      .select()
+      .single();
 
-  if (parsed.data.role && parsed.data.role !== oldMember?.role) {
-    await createAuditLog({
-      tenant_id: ctx.tenant_id,
-      actor_id: ctx.user_id,
-      action: "role_changed",
-      entity_type: "team_member",
-      entity_id: data.id,
-      old_values: { role: oldMember?.role },
-      new_values: { role: parsed.data.role },
-    });
+    if (error) {
+      console.error("Update member error:", error);
+      return jsonError(error.message || "Failed to update member", 500);
+    }
+
+    if (parsed.data.role && parsed.data.role !== oldMember?.role) {
+      createAuditLog({
+        tenant_id: ctx.tenant_id,
+        actor_id: ctx.user_id,
+        action: "role_changed",
+        entity_type: "team_member",
+        entity_id: data.id,
+        old_values: { role: oldMember?.role },
+        new_values: { role: parsed.data.role },
+      }).catch((err) => console.error("Audit log error:", err));
+    }
+
+    return jsonSuccess(data);
+  } catch (err) {
+    console.error("Unhandled error in PATCH /api/teams/[id]/members/[userId]:", err);
+    return jsonError("Internal server error", 500);
   }
-
-  return jsonSuccess(data);
 }
 
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string; userId: string }> }
 ) {
-  const { id: teamId, userId } = await params;
-  const ctx = await getAuthContext();
-  if (!ctx) return jsonError("Unauthorized", 401);
+  try {
+    const { id: teamId, userId } = await params;
+    const ctx = await getAuthContext();
+    if (!ctx) return jsonError("Unauthorized", 401);
 
-  const teamRole = await getTeamRole(ctx.user_id, teamId);
-  const canRemove = ctx.global_role === "super_admin" || teamRole === "admin";
-  if (!canRemove) return jsonError("Forbidden", 403);
+    const teamRole = await getTeamRole(ctx.user_id, teamId);
+    const canRemove = ctx.global_role === "super_admin" || teamRole === "admin";
+    if (!canRemove) return jsonError("Forbidden", 403);
 
-  const supabase = await createClient();
+    const supabase = await createServiceClient();
 
-  // Soft deactivate
-  const { data, error } = await supabase
-    .from("team_members")
-    .update({ is_active: false })
-    .eq("team_id", teamId)
-    .eq("user_id", userId)
-    .select()
-    .single();
+    const { data, error } = await supabase
+      .from("team_members")
+      .update({ is_active: false })
+      .eq("team_id", teamId)
+      .eq("user_id", userId)
+      .select()
+      .single();
 
-  if (error) return jsonError("Failed to remove member", 500);
+    if (error) {
+      console.error("Remove member error:", error);
+      return jsonError(error.message || "Failed to remove member", 500);
+    }
 
-  await createAuditLog({
-    tenant_id: ctx.tenant_id,
-    actor_id: ctx.user_id,
-    action: "member_removed",
-    entity_type: "team_member",
-    entity_id: data.id,
-    new_values: { is_active: false },
-  });
+    createAuditLog({
+      tenant_id: ctx.tenant_id,
+      actor_id: ctx.user_id,
+      action: "member_removed",
+      entity_type: "team_member",
+      entity_id: data.id,
+      new_values: { is_active: false },
+    }).catch((err) => console.error("Audit log error:", err));
 
-  return jsonSuccess({ success: true });
+    return jsonSuccess({ success: true });
+  } catch (err) {
+    console.error("Unhandled error in DELETE /api/teams/[id]/members/[userId]:", err);
+    return jsonError("Internal server error", 500);
+  }
 }
