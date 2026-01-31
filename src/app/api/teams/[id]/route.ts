@@ -6,7 +6,7 @@ import {
   jsonSuccess,
   createAuditLog,
 } from "@/lib/api/helpers";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { updateTeamSchema } from "@/lib/validations/team";
 
 export async function GET(
@@ -76,7 +76,8 @@ export async function DELETE(
   if (!ctx) return jsonError("Unauthorized", 401);
   if (ctx.global_role !== "super_admin") return jsonError("Forbidden", 403);
 
-  const supabase = await createClient();
+  // Use service client — role already verified above
+  const supabase = await createServiceClient();
 
   // Soft archive
   const { data, error } = await supabase

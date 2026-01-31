@@ -1,5 +1,10 @@
-import { getAuthContext, jsonError, jsonSuccess } from "@/lib/api/helpers";
-import { createClient } from "@/lib/supabase/server";
+import {
+  getAuthContext,
+  jsonError,
+  jsonSuccess,
+  createAuditLog,
+} from "@/lib/api/helpers";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createTeamSchema } from "@/lib/validations/team";
 
 export async function GET() {
@@ -28,7 +33,8 @@ export async function POST(request: Request) {
   const parsed = createTeamSchema.safeParse(body);
   if (!parsed.success) return jsonError("Invalid input", 400);
 
-  const supabase = await createClient();
+  // Use service client to bypass RLS — role already verified above
+  const supabase = await createServiceClient();
   const { data, error } = await supabase
     .from("teams")
     .insert({ name: parsed.data.name, tenant_id: ctx.tenant_id })
@@ -41,6 +47,15 @@ export async function POST(request: Request) {
     }
     return jsonError("Failed to create team", 500);
   }
+
+  await createAuditLog({
+    tenant_id: ctx.tenant_id,
+    actor_id: ctx.user_id,
+    action: "team.created",
+    entity_type: "team",
+    entity_id: data.id,
+    new_values: { name: parsed.data.name },
+  });
 
   return jsonSuccess(data, 201);
 }
